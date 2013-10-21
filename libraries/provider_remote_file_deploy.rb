@@ -17,6 +17,7 @@
 #
 
 require 'chef/provider/remote_file'
+require 'chef/mixin/checksum'
 
 class Chef
   class Provider
@@ -25,9 +26,11 @@ class Chef
 
         def initialize(new_resource, run_context)
           @deploy_resource = new_resource
-          @new_resource = Chef::Resource::RemoteFile.new(@deploy_resource.name)
-          @new_resource.path ::File.join(@deploy_resource.destination, ::File.basename(@deploy_resource.repository))
+          @war = @deploy_resource.name + ".war"
+          @new_resource = Chef::Resource::RemoteFile.new(@war)
+          @new_resource.path ::File.join(@deploy_resource.destination, @war)
           @new_resource.source @deploy_resource.repository
+          #@new_resource.atomic_update = true
           unless @deploy_resource.revision == "HEAD"
             @new_resource.checksum @deploy_resource.revision
           end
@@ -37,7 +40,11 @@ class Chef
           @current_resource = nil
           @run_context = run_context
           @converge_actions = nil
+          @synched = false
+          @content_class = Chef::Provider::RemoteFile::Content
+          @deployment_strategy = Chef::FileContentManagement::Deploy.strategy(true)
         end
+
 
         def target_revision
           unless @new_resource.checksum
@@ -48,9 +55,15 @@ class Chef
         alias :revision_slug :target_revision
 
         def action_sync
-          create_dir_unless_exists(@deploy_resource.destination)
-          purge_old_downloads
-          action_create
+          if !@synched
+            create_dir_unless_exists(@deploy_resource.destination)
+            purge_old_downloads
+            action_create
+            @synched = true
+          end
+          unless @new_resource.checksum
+            @new_resource.checksum(checksum(@new_resource.path))
+          end
         end
 
         private
