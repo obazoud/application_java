@@ -27,10 +27,7 @@ class Chef
           @deploy_resource = new_resource
           @new_resource = Chef::Resource::File.new(@deploy_resource.name)
           @new_resource.path ::File.join(@deploy_resource.destination, ::File.basename(@deploy_resource.repository))
-          @new_resource.content @deploy_resource.repository
-          unless @deploy_resource.revision == "HEAD"
-            @new_resource.checksum @deploy_resource.revision
-          end
+
           @new_resource.owner @deploy_resource.user
           @new_resource.group @deploy_resource.group
           provider = @new_resource.provider
@@ -38,13 +35,12 @@ class Chef
           @current_resource = nil
           @run_context = run_context
           @converge_actions = nil
+
+          super(@new_resource, run_context) if defined?(super)
         end
 
         def target_revision
-          unless @new_resource.checksum
-            action_sync
-          end
-          @target_revision ||= @new_resource.checksum
+          action_sync
         end
         alias :revision_slug :target_revision
 
@@ -59,14 +55,21 @@ class Chef
           unless compare_content
             converge_by("stage local file #{@new_resource.content} to #{@new_resource.path}") do
               backup @new_resource.path if ::File.exists?(@new_resource.path)
-              ::FileUtils.cp_r(@new_resource.content, @new_resource.path)
-              Chef::Log.info("#{@new_resource.content} copied to #{@new_resource.path}")
-              @new_resource.updated_by_last_action(true)
+              ::FileUtils.cp_r(@deploy_resource.repository, @new_resource.path)
             end
           end
         end
+
         def compare_content
-          checksum(@current_resource.path) == checksum(@new_resource.content)
+          checksum(@deploy_resource.repository) == checksum(@new_resource.path)
+        end
+
+        def contents_changed?
+          compare_content
+        end
+
+        def do_contents_changes
+          set_content
         end
 
         private
@@ -97,8 +100,10 @@ class Chef
         def purge_old_staged_files
           converge_by("purge old staged files") do
             Dir.glob( "#{@deploy_resource.destination}/*" ).each do |direntry|
-              FileUtils.rm_rf( direntry ) unless direntry == @new_resource.path
-              Chef::Log.info("#{@new_resource} purged old file #{direntry}")
+              unless direntry == @new_resource.path
+                FileUtils.rm_rf( direntry )
+                Chef::Log.info("#{@new_resource} purged old file #{direntry}")
+              end
             end
           end
         end
