@@ -20,38 +20,22 @@
 include Chef::DSL::IncludeRecipe
 
 action :before_compile do
-
-  include_recipe "tomcat"
-
-  unless new_resource.restart_command
-    new_resource.restart_command do
-      run_context.resource_collection.find(:service => "tomcat").run_action(:restart)
-    end
-  end
-
 end
 
 action :before_deploy do
-
-  new_resource = @new_resource
-
-  # remove ROOT application
-  # TODO create a LWRP to enable/disable tomcat apps
-  directory "#{node['tomcat']['webapp_dir']}/ROOT" do
-    recursive true
-    action :delete
-    not_if "test -L #{node['tomcat']['context_dir']}/ROOT.xml"
+  service new_resource.name do
+    supports restart: true, reload: true, status: true
+    action :stop
   end
-  
-  # remove application's unpacked folder
-  directory "#{node['tomcat']['webapp_dir']}/#{new_resource.application.name}" do
+
+  directory "/usr/local/tomcat/#{new_resource.name}/webapps/ROOT" do
     recursive true
     action :delete
   end
 
-  link "#{node['tomcat']['context_dir']}/#{new_resource.application.name}.xml" do
-    to "#{new_resource.application.path}/shared/#{new_resource.application.name}.xml"
-    notifies :restart, resources(:service => "tomcat")
+  service new_resource.name do
+    supports restart: true, reload: true, status: true
+    action :restart
   end
 end
 
@@ -65,4 +49,18 @@ action :before_restart do
 end
 
 action :after_restart do
+  service new_resource.name do
+    supports restart: true, reload: true, status: true
+    action :stop
+  end
+
+  directory "/usr/local/tomcat/#{new_resource.name}/webapps/ROOT" do
+    recursive true
+    action :delete
+  end
+
+  service new_resource.name do
+    supports restart: true, reload: true, status: true
+    action :restart
+  end
 end
